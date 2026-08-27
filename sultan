@@ -1,0 +1,313 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
+
+local Animals = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
+local Notif = require(ReplicatedStorage:WaitForChild("Controllers"):WaitForChild("NotificationController"))
+
+local ZOOM_DISTANCE = 40
+local cameraLockConnection
+local isDragging = false
+local dragStart
+local frameStart
+
+-- =============================================================================
+-- نظام الكتابة فوق الرأس (tik star_only99)
+-- =============================================================================
+local billboardGui = Instance.new("BillboardGui")
+billboardGui.Name = "RainbowTag"
+billboardGui.Size = UDim2.new(0, 200, 0, 50)
+billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+billboardGui.AlwaysOnTop = true
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(1, 0, 1, 0)
+textLabel.BackgroundTransparency = 1
+textLabel.Text = "tik star_only99"
+textLabel.TextColor3 = Color3.new(1, 1, 1)
+textLabel.TextScaled = true
+textLabel.Font = Enum.Font.GothamBold
+textLabel.Parent = billboardGui
+
+local textStroke = Instance.new("UIStroke")
+textStroke.Thickness = 2
+textStroke.Parent = textLabel
+
+RunService.RenderStepped:Connect(function()
+	local char = player.Character
+	if char and char:FindFirstChild("Head") then
+		billboardGui.Parent = char.Head
+	else
+		billboardGui.Parent = nil
+	end
+	
+	local hue = (tick() % 5) / 5
+	local rainbowColor = Color3.fromHSV(hue, 1, 1)
+	textLabel.TextColor3 = rainbowColor
+end)
+
+-- =============================================================================
+-- وظائف اللعبة الأساسية
+-- =============================================================================
+local function startCameraLock(hrp, distance)
+	if not hrp then return end
+	camera.CameraType = Enum.CameraType.Scriptable
+	if cameraLockConnection then
+		cameraLockConnection:Disconnect()
+	end
+	cameraLockConnection = RunService.RenderStepped:Connect(function()
+		if not hrp or not hrp.Parent then return end
+		local offset = -hrp.CFrame.LookVector * distance + Vector3.new(0, 5, 0)
+		local pos = hrp.Position + offset
+		camera.CFrame = CFrame.new(pos, hrp.Position)
+	end)
+end
+
+local function stopCameraLock()
+	if cameraLockConnection then
+		cameraLockConnection:Disconnect()
+		cameraLockConnection = nil
+	end
+end
+
+local function getMyBasePosition()
+	local plots = workspace:FindFirstChild("Plots")
+	if not plots then return nil end
+	for _, plot in ipairs(plots:GetChildren()) do
+		if plot:IsA("Model") then
+			local label = plot:FindFirstChild("PlotSign") and plot.PlotSign:FindFirstChild("SurfaceGui") and plot.PlotSign.SurfaceGui:FindFirstChild("Frame") and plot.PlotSign.SurfaceGui.Frame:FindFirstChild("TextLabel")
+			if label then
+				local owner = label.Text:match("(.+)'s Base")
+				if owner == player.Name or owner == player.DisplayName then
+					local spawn = plot:FindFirstChild("Spawn")
+					return spawn and spawn.Position or plot:GetPivot().Position
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function getChar()
+	local char = player.Character
+	if not char then return end
+	return char, char:FindFirstChildOfClass("Humanoid"), char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getFormattedItem(itemName, rarity)
+	if rarity == "Secret" then
+		return string.format("<zebra>%s</zebra>", itemName)
+	elseif rarity == "Rare" then
+		return string.format('<font color="#0083ab">%s</font>', itemName)
+	elseif rarity == "Common" then
+		return string.format('<font color="#00ab28">%s</font>', itemName)
+	elseif rarity == "Epic" then
+		return string.format('<font color="#8600ab">%s</font>', itemName)
+	elseif rarity == "Legendary" then
+		return string.format('<font color="#fbff00">%s</font>', itemName)
+	elseif rarity == "Mythic" then
+		return string.format('<font color="#ff2a2a">%s</font>', itemName)
+	elseif rarity == "Brainrot God" then
+		return string.format("<rainbow>%s</rainbow>", itemName)
+	elseif rarity == "OG" then
+		return string.format("<og>%s</og>", itemName)
+	end
+	return itemName
+end
+
+-- الوظيفة الأساسية (تتنفذ فوراً أول ما تضغط الزر وأنت ماسك الحيوان)
+local function runSequence()
+	local stolenItem = player:GetAttribute("StealingIndex")
+	local rarity = "Unknown"
+	if stolenItem and Animals[stolenItem] then
+		rarity = Animals[stolenItem].Rarity or "Unknown"
+	end
+	
+	task.wait(0.1)
+	local base = getMyBasePosition()
+	local char, _, hrp = getChar()
+	
+	if hrp then
+		startCameraLock(hrp, ZOOM_DISTANCE)
+	end
+	
+	task.wait(0.1)
+	if hrp and base and char then
+		local oldParent = hrp.Parent
+		hrp.CFrame = CFrame.new(base + Vector3.new(0, 3, 0))
+		hrp.Parent = nil
+		task.wait(0.05)
+		hrp.Parent = oldParent
+	end
+	
+	task.wait(0.25)
+	if stolenItem then
+		local formattedName = getFormattedItem(stolenItem, rarity)
+		Notif:Notify("You stole " .. formattedName, 5, "Sounds.Sfx.Success")
+	end
+	
+	task.wait(0.1)
+	if hrp then
+		hrp.CFrame = CFrame.new(0, -500, 0)
+		hrp.Parent = nil
+	end
+	
+	task.wait()
+	stopCameraLock()
+	
+	if stolenItem then
+		player:Kick("You stole a " .. rarity .. " " .. stolenItem .. " love you bbg (from Rainbow semi steal)")
+	end
+end
+
+-- =============================================================================
+-- واجهة المستخدم (تدرج فخم وشفاف بدون شاشة سوداء)
+-- =============================================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RainbowSemiStealUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local shadowFrame = Instance.new("Frame")
+shadowFrame.Size = UDim2.new(0, 215, 0, 115)
+shadowFrame.Position = UDim2.new(0.5, -107, 0.5, -57)
+shadowFrame.BackgroundColor3 = Color3.fromHSV(0, 1, 1)
+shadowFrame.BackgroundTransparency = 0.85
+shadowFrame.BorderSizePixel = 0
+shadowFrame.Parent = screenGui
+
+local shadowCorner = Instance.new("UICorner")
+shadowCorner.CornerRadius = UDim.new(0, 20)
+shadowCorner.Parent = shadowFrame
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 200, 0, 100)
+mainFrame.Position = UDim2.new(0.5, -100, 0.5, -50)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+
+local bgGradient = Instance.new("UIGradient")
+bgGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 40)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 15))
+})
+bgGradient.Rotation = 90
+bgGradient.Parent = mainFrame
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 14)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 2
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+mainStroke.Parent = mainFrame
+
+local strokeGradient = Instance.new("UIGradient")
+strokeGradient.Rotation = 45
+strokeGradient.Parent = mainStroke
+
+local titleLabelGui = Instance.new("TextLabel")
+titleLabelGui.Size = UDim2.new(1, 0, 0, 28)
+titleLabelGui.BackgroundTransparency = 1
+titleLabelGui.Text = "Rainbow semi steal"
+titleLabelGui.TextColor3 = Color3.new(1, 1, 1)
+titleLabelGui.Font = Enum.Font.GothamBold
+titleLabelGui.TextSize = 14
+titleLabelGui.Parent = mainFrame
+
+local actionButton = Instance.new("TextButton")
+actionButton.Size = UDim2.new(0, 160, 0, 30)
+actionButton.Position = UDim2.new(0.5, -80, 0, 55)
+actionButton.Text = "Start Instasteal"
+actionButton.TextColor3 = Color3.new(1, 1, 1)
+actionButton.Font = Enum.Font.GothamBold
+actionButton.TextSize = 10
+actionButton.AutoButtonColor = false
+actionButton.Parent = mainFrame
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = actionButton
+
+local btnGradient = Instance.new("UIGradient")
+btnGradient.Parent = actionButton
+
+RunService.RenderStepped:Connect(function()
+	local hue = (tick() % 5) / 5
+	local color = Color3.fromHSV(hue, 1, 1)
+	
+	strokeGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, color),
+		ColorSequenceKeypoint.new(0.5, Color3.fromHSV((hue + 0.5) % 1, 1, 1)),
+		ColorSequenceKeypoint.new(1, color)
+	})
+	
+	actionButton.BackgroundColor3 = color
+	btnGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, color),
+		ColorSequenceKeypoint.new(1, Color3.fromHSV((hue + 0.66) % 1, 1, 1))
+	})
+	shadowFrame.BackgroundColor3 = color
+end)
+
+mainFrame.Size = UDim2.new(0, 200, 0, 0)
+shadowFrame.Size = UDim2.new(0, 215, 0, 0)
+shadowFrame.BackgroundTransparency = 1
+TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 200, 0, 100)}):Play()
+TweenService:Create(shadowFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 215, 0, 115), BackgroundTransparency = 0.85}):Play()
+
+-- السحب والإفلات للواجهة
+local function startDrag(inputPos)
+	isDragging = true
+	dragStart = inputPos
+	frameStart = mainFrame.Position
+end
+local function updateDrag(inputPos)
+	if not isDragging or not dragStart or not frameStart then return end
+	local delta = inputPos - dragStart
+	local newPos = frameStart + UDim2.new(0, delta.X, 0, delta.Y)
+	TweenService:Create(mainFrame, TweenInfo.new(0.05), {Position = newPos}):Play()
+	TweenService:Create(shadowFrame, TweenInfo.new(0.05), {Position = newPos + UDim2.new(0, -7, 0, -7)}):Play()
+end
+local function stopDrag()
+	isDragging = false
+	dragStart = nil
+	frameStart = nil
+end
+
+titleLabelGui.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		startDrag(input.Position)
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		updateDrag(input.Position)
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		stopDrag()
+	end
+end)
+
+-- الطريقة الجديدة: تشيل الحيوان بيدك براحتك، ومتى ما بغيت تضغط الزر عشان تنفذ العملية!
+actionButton.Activated:Connect(function()
+	if player:GetAttribute("Stealing") == true then
+		runSequence()
+	else
+		-- لو ضغطت الزر وما كنت ماسك حيوان، يعطيك تنبيه أو يشغلها كحماية
+		task.spawn(runSequence)
+	end
+end)
